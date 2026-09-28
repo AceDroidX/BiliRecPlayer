@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=处理录播字幕和弹幕
+Comment=处理所选 FLV 或文件夹，生成语音识别 JSON、SRT 字幕和 ASS 弹幕
+Icon=video-x-generic
+Exec=./process-recordings.py %f
+Terminal=true
+MimeType=video/x-flv;inode/directory;
+Categories=AudioVideo;Video;
+NoDisplay=false

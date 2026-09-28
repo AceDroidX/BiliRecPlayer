@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批量处理目录中的 FLV 录播和 XML 弹幕，跳过已完成的步骤。"""
+"""处理目录或单个 FLV 录播，跳过已完成的转写与弹幕转换步骤。"""
 
 import argparse
 import json
@@ -80,16 +80,26 @@ def process_xml(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "directory", nargs="?", type=Path, default=SCRIPT_DIR,
-        help="要处理的目录；默认是脚本所在目录",
+        "input", nargs="?", type=Path, default=SCRIPT_DIR,
+        help="要处理的目录或单个 FLV；默认是脚本所在目录",
     )
     args = parser.parse_args()
-    if not args.directory.is_dir():
-        parser.error(f"目录不存在：{args.directory}")
+    if args.input.is_dir():
+        files = sorted((path for path in args.input.iterdir() if path.is_file()), key=lambda path: path.name)
+        videos = [path for path in files if path.suffix.lower() == ".flv"]
+        danmaku = [path for path in files if path.suffix.lower() == ".xml"]
+    elif args.input.is_file() and args.input.suffix.lower() == ".flv":
+        videos = [args.input]
+        # 单文件模式只转换与所选录播同名的弹幕。
+        danmaku = sorted(
+            (path for path in args.input.parent.iterdir()
+             if path.is_file() and path.stem == args.input.stem
+             and path.suffix.lower() == ".xml"),
+            key=lambda path: path.name,
+        )
+    else:
+        parser.error(f"请输入存在的目录或 FLV 文件：{args.input}")
 
-    files = sorted((path for path in args.directory.iterdir() if path.is_file()), key=lambda path: path.name)
-    videos = [path for path in files if path.suffix.lower() == ".flv"]
-    danmaku = [path for path in files if path.suffix.lower() == ".xml"]
     print(f"发现 {len(videos)} 个 FLV、{len(danmaku)} 个 XML", flush=True)
 
     failed = False
