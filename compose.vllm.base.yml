@@ -1,0 +1,33 @@
+services:
+  vllm-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.vllm
+
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+    ipc: host
+
+    security_opt:
+      - seccomp=unconfined
+
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      FLASH_ATTENTION_TRITON_AMD_ENABLE: "TRUE"
+      HTTPS_PROXY: ${HTTPS_PROXY-}
+      HTTP_PROXY: ${HTTP_PROXY-}
+      # 最大上传音频文件 1024 MiB
+      VLLM_MAX_AUDIO_CLIP_FILESIZE_MB: "1024"
+      # 最长允许 2 小时音频
+      VLLM_MAX_AUDIO_DECODE_DURATION_S: "7200"
+      # 解码后 PCM 最大 2 GiB
+      VLLM_MAX_AUDIO_DECODE_BYTES: "2147483648"
+
+    volumes:
+      - ./models/huggingface:/root/.cache/huggingface
+      - ./vllm-cache:/root/.cache/vllm
+
+    ports:
+      - "8000:8000"

@@ -1,0 +1,24 @@
+FROM vllm/vllm-openai-rocm:v0.30.0
+
+RUN pip install --no-cache-dir soundfile av
+
+# 将 MOSS 的 max_encoder_batch 限制为 64，避免显存不足。
+# 适用于约一小时的音频。
+RUN python - <<'PY'
+from pathlib import Path
+
+p = Path(
+    "/usr/local/lib/python3.12/dist-packages/"
+    "vllm/model_executor/models/moss_transcribe_diarize.py"
+)
+
+s = p.read_text()
+
+old = "self.max_encoder_batch: int | None = None"
+new = "self.max_encoder_batch: int | None = 64"
+
+assert old in s, "MOSS max_encoder_batch code not found"
+p.write_text(s.replace(old, new, 1))
+
+print("Patched MOSS max_encoder_batch = 64")
+PY

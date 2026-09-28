@@ -5,3 +5,6 @@
 *.json
 DanmakuFactory
 docs-local/
+# 本地模型与推理缓存
+models/huggingface/
+vllm-cache/

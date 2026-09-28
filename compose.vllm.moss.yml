@@ -1,0 +1,76 @@
+services:
+  moss:
+    extends:
+      file: compose.vllm.base.yml
+      service: vllm-base
+
+    container_name: moss
+
+    command:
+      - OpenMOSS-Team/MOSS-Transcribe-Diarize
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --trust-remote-code
+      - --attention-backend
+      - TRITON_ATTN
+      # - --gpu-memory-utilization
+      # - "0.85"
+
+      # 最大上下文长度 65536 tokens。
+      # MOSS 会把整段音频作为一个 decoder request，而不是像普通 ASR 那样
+      # 在 API 层切成多个独立请求。
+      #
+      # 约 1 小时音频实测输入约 47.8K tokens，
+      # 配合 max_completion_tokens=16384 时总长度约 64K，
+      # 因此 65536 基本可以覆盖 1 小时长音频。
+      - --max-model-len
+      - "65536"
+
+      # 单次 scheduler iteration 最多处理 4096 tokens。
+      # MOSS 的长 prompt 会通过 chunked prefill 分批处理；
+      # 该值只控制每批 prefill 的粒度，不限制请求的最大上下文长度。
+      #
+      # vLLM 在当前硬件/API Server 场景下默认约为 2048，
+      # 这里提高到 4096，以减少长音频 prompt 的 prefill iteration 数量，
+      # 更适合当前 max_num_seqs=1 的单文件转写场景。
+      # 不是处理长音频所必需的参数，删除后仍可正常运行。
+      - --max-num-batched-tokens
+      - "4096"
+
+      # 同时最多运行 1 个 sequence。
+      # 当前用途是一次处理一个长音频文件，因此无需为多个并发请求
+      # 额外预留 KV cache / CUDA Graph 等显存。
+      #
+      # 如果以后需要同时转写多个文件，可以再考虑提高到 2 或更高。
+      - --max-num-seqs
+      - "1"
+
+      # 限制启动阶段 multimodal memory profiling 使用的 dummy audio 大小。
+      #
+      # 62,400,000 samples / 16000 Hz = 3900 秒 = 65 分钟。
+      # 这里设置为 65 分钟，是为了覆盖约 1 小时文件并留一点余量。
+      #
+      # 注意：该 length 只影响启动时的显存 profiling，
+      # 不会限制实际请求只能上传 65 分钟音频。
+      #
+      # MOSS 内部仍然按照固定约 30 秒的 Whisper encoder window 处理音频。
+      - --limit-mm-per-prompt
+      - '{"audio":{"count":1,"length":62400000}}'
+
+# --max-model-len 65536
+#     ↓
+# 单个 MOSS decoder request 最大总长度
+
+# --limit-mm-per-prompt ...
+#     ↓
+# 启动时拿多长的 dummy audio 做 activation profiling
+
+# max_encoder_batch = 64
+#     ↓
+# Whisper encoder 每次最多处理多少个 30s window
+
+# --max-num-batched-tokens 4096
+#     ↓
+# decoder/prefill scheduler 每轮最多推进多少 token

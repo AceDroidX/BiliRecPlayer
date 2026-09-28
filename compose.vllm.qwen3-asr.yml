@@ -1,0 +1,26 @@
+services:
+  qwen3-asr:
+    extends:
+      file: compose.vllm.base.yml
+      service: vllm-base
+
+    container_name: qwen3-asr
+
+    command:
+      - Qwen/Qwen3-ASR-1.7B
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --attention-backend
+      - TRITON_ATTN
+      # - --gpu-memory-utilization
+      # - "0.85"
+      - --max-model-len
+      - "32768"
+      - --mm-processor-kwargs
+      - '{"chunk_length":300}'
+      - --max-num-batched-tokens
+      - "4096"
+      - --max-num-seqs
+      - "1"
