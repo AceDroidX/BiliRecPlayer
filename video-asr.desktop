@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=生成中文字幕
+Comment=使用本地 ASR 服务生成 SRT 字幕
+Icon=audio-input-microphone
+Exec=./video-asr.py %F
+Terminal=true
+MimeType=video/x-flv;
+NoDisplay=false

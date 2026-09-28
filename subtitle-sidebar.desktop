@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=录播弹幕与字幕栏
+Comment=使用 mpv 播放同名 ASS 弹幕和 SRT 字幕，并显示右侧字幕栏
+Icon=mpv
+Exec=./play-with-transcript.py %F
+Terminal=true
+MimeType=video/x-flv;video/mp4;video/x-matroska;video/quicktime;video/webm;
+Categories=AudioVideo;Video;Player;
+NoDisplay=false
