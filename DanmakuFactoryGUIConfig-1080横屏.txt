@@ -12,7 +12,7 @@ outline:0;
 shadow:1;
 bold:True;
 blockR2L:False;blockL2R:False;blockTop:False;blockBtm:False;blockSpecial:False;blockColor:False;blockRepeat:False;
-statTable:False;statHistogram:True;
+statTable:False;statHistogram:False;
 showUsernames:True;
 showMsgbox:True;
 msgboxPosX:10;msgboxPosY:420;

@@ -11,6 +11,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LUA_SCRIPT = SCRIPT_DIR / "subtitle-sidebar.lua"
+HEATMAP_SCRIPT = SCRIPT_DIR / "danmaku-heatmap.lua"
 VIDEO_SUFFIXES = {".flv", ".mp4", ".mkv", ".mov", ".webm"}
 
 
@@ -56,6 +57,7 @@ def command_for(video):
         "--secondary-sub-pos=95",
         "--sub-use-margins=no",
         f"--script={LUA_SCRIPT}",
+        f"--script={HEATMAP_SCRIPT}",
         f"--sub-file={ass}",
         f"--sub-file={srt}",
         str(video),
@@ -68,8 +70,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只检查文件并打印 mpv 命令")
     args = parser.parse_args()
 
-    if not LUA_SCRIPT.is_file():
-        parser.exit(1, f"找不到 mpv 脚本：{LUA_SCRIPT}\n")
+    for script in (LUA_SCRIPT, HEATMAP_SCRIPT):
+        if not script.is_file():
+            parser.exit(1, f"找不到 mpv 脚本：{script}\n")
     if not args.dry_run and not shutil.which("mpv"):
         parser.exit(1, "找不到 mpv 可执行程序\n")
 
