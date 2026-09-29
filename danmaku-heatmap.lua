@@ -75,14 +75,14 @@ local function calculate_density()
         end
     end
 
-    -- 平滑相邻时间段，降低瞬时刷屏造成的尖峰。
+    -- 用相邻时间段轻度平滑，保留短时弹幕高峰。
     local sorted = {}
     for index = 1, count do
         local weighted, total_weight = 0, 0
-        for offset = -2, 2 do
+        for offset = -1, 1 do
             local neighbor = index + offset
             if neighbor >= 1 and neighbor <= count then
-                local weight = 3 - math.abs(offset)
+                local weight = 2 - math.abs(offset)
                 weighted = weighted + bins[neighbor] * weight
                 total_weight = total_weight + weight
             end
@@ -91,11 +91,35 @@ local function calculate_density()
         table.insert(sorted, values[index])
     end
     table.sort(sorted)
-    local high = sorted[math.max(1, math.ceil(#sorted * 0.95))]
-    if high <= 0 then high = sorted[#sorted] end
+    local median = sorted[math.max(1, math.ceil(count * 0.5))]
+    local high = sorted[math.max(1, math.ceil(count * 0.9))]
+    local peak = sorted[math.max(1, math.ceil(count * 0.99))]
+    if peak <= 0 then peak = sorted[#sorted] end
+
+    -- 分段映射热度，拉开普通时段与高峰时段的高度差。
+    local anchors = {{0, 0}}
+    for _, anchor in ipairs({{median, 0.25}, {high, 0.75}, {peak, 1}}) do
+        if anchor[1] > anchors[#anchors][1] then
+            table.insert(anchors, anchor)
+        else
+            anchors[#anchors][2] = anchor[2]
+        end
+    end
     for index = 1, count do
-        values[index] = high > 0 and math.sqrt(
-            clamp(values[index] / high, 0, 1)) or 0
+        local density = values[index]
+        local level = 0
+        if density > 0 then
+            for segment = 2, #anchors do
+                local lower, upper = anchors[segment - 1], anchors[segment]
+                if density <= upper[1] then
+                    level = lower[2] + (upper[2] - lower[2]) *
+                        (density - lower[1]) / (upper[1] - lower[1])
+                    break
+                end
+                level = upper[2]
+            end
+        end
+        values[index] = level
     end
 end
 
