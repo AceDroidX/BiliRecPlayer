@@ -103,12 +103,17 @@ def main():
     print(f"发现 {len(videos)} 个 FLV、{len(danmaku)} 个 XML", flush=True)
 
     failed = False
-    for video in videos:
-        print(f"\n处理视频：{video.name}", flush=True)
-        failed = process_video(video) or failed
-    for xml in danmaku:
-        print(f"\n处理弹幕：{xml.name}", flush=True)
-        failed = process_xml(xml) or failed
+    files = sorted(
+        [*videos, *danmaku],
+        key=lambda path: (path.stem, path.suffix.lower() != ".xml", path.name),
+    )
+    for source in files:
+        if source.suffix.lower() == ".flv":
+            print(f"\n处理视频：{source.name}", flush=True)
+            failed = process_video(source) or failed
+        else:
+            print(f"\n处理弹幕：{source.name}", flush=True)
+            failed = process_xml(source) or failed
 
     print("\n处理完成" if not failed else "\n处理结束，部分步骤失败", flush=True)
     return 1 if failed else 0
