@@ -468,6 +468,23 @@ local function scroll(direction)
     render()
 end
 
+local function filter_clicked_speaker(event)
+    if event.event ~= "down" and event.event ~= "press" then return end
+    local inside, mouse, g = in_sidebar()
+    if not visible or not inside or mouse.y < HEADER_HEIGHT or
+        mouse.x >= g.w - 22 then return end
+    for _, row in ipairs(row_hits) do
+        if mouse.y >= row.top and mouse.y < row.bottom then
+            local speaker = subtitles[row.index].speaker
+            if speaker then
+                set_filter(speaker)
+                render()
+            end
+            return
+        end
+    end
+end
+
 local function scroll_page(direction)
     if not visible or #filtered_indices == 0 then return end
     local g = geometry()
@@ -528,6 +545,8 @@ local function enable_mouse_bindings()
     mouse_bindings_enabled = true
     mp.add_forced_key_binding("MBTN_LEFT", "sidebar-click", sidebar_mouse,
         {complex = true})
+    mp.add_forced_key_binding("MBTN_RIGHT", "sidebar-filter-speaker",
+        filter_clicked_speaker, {complex = true})
     mp.add_forced_key_binding("WHEEL_UP", "sidebar-up", function() scroll(-1) end)
     mp.add_forced_key_binding("WHEEL_DOWN", "sidebar-down", function() scroll(1) end)
 end
@@ -537,6 +556,7 @@ local function disable_mouse_bindings()
     mouse_bindings_enabled = false
     scrollbar_dragging = false
     mp.remove_key_binding("sidebar-click")
+    mp.remove_key_binding("sidebar-filter-speaker")
     mp.remove_key_binding("sidebar-up")
     mp.remove_key_binding("sidebar-down")
 end
