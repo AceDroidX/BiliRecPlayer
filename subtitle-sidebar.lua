@@ -581,6 +581,22 @@ local function seek_selected()
     render()
 end
 
+local function play_adjacent_subtitle(direction)
+    if not visible or #filtered_indices == 0 then return end
+    local delay = mp.get_property_number("secondary-sub-delay", 0)
+    local time_pos = mp.get_property_number("time-pos", 0) - delay
+    local position = (find_anchor(time_pos) or 0) + direction
+    if position < 1 or position > #filtered_indices then return end
+    local sub = subtitles[filtered_indices[position]]
+    -- 按播放进度跳到筛选后的相邻字幕，并计入字幕延迟。
+    mp.commandv("seek", tostring(sub.start + delay), "absolute+exact")
+    mp.set_property_bool("pause", false)
+    follow_current = true
+    browse_index = nil
+    last_anchor = nil
+    render()
+end
+
 local function sidebar_mouse(event)
     if event.event == "up" then
         scrollbar_dragging = false
@@ -628,6 +644,12 @@ local function enable_keyboard_bindings()
     end, {repeatable = true})
     mp.add_forced_key_binding("ENTER", "sidebar-seek", seek_selected)
     mp.add_forced_key_binding("KP_ENTER", "sidebar-seek-keypad", seek_selected)
+    mp.add_forced_key_binding(";", "sidebar-previous-play-semicolon", function()
+        play_adjacent_subtitle(-1)
+    end)
+    mp.add_forced_key_binding("'", "sidebar-next-play-apostrophe", function()
+        play_adjacent_subtitle(1)
+    end)
     mp.add_forced_key_binding("PGUP", "sidebar-page-up", function()
         scroll_page(-1)
     end, {repeatable = true})
@@ -643,6 +665,8 @@ local function disable_keyboard_bindings()
     mp.remove_key_binding("sidebar-next")
     mp.remove_key_binding("sidebar-seek")
     mp.remove_key_binding("sidebar-seek-keypad")
+    mp.remove_key_binding("sidebar-previous-play-semicolon")
+    mp.remove_key_binding("sidebar-next-play-apostrophe")
     mp.remove_key_binding("sidebar-page-up")
     mp.remove_key_binding("sidebar-page-down")
 end
