@@ -7,6 +7,7 @@ local TEXT_SIZE = 34
 local LINE_HEIGHT = 42
 local CJK_WIDTH_RATIO = 0.68
 local SCROLL_ROWS = 3
+local FILTER_OPTION_HEIGHT = 32
 
 local overlay = mp.create_osd_overlay("ass-events")
 local subtitles = {}
@@ -24,6 +25,9 @@ local mouse_bindings_enabled = false
 local keyboard_bindings_enabled = false
 local row_hits = {}
 local filter_hits = {}
+local filter_menu_open = false
+local filter_menu_top = 1
+local filter_menu_hits = {}
 local scrollbar = nil
 local scrollbar_dragging = false
 local browse_index = nil
@@ -110,24 +114,9 @@ local function rebuild_filter()
 end
 
 local function set_filter(speaker)
+    filter_menu_open = false
     filter_speaker = speaker
     rebuild_filter()
-end
-
-local function cycle_filter()
-    if #speakers == 0 then return end
-    if filter_speaker == nil then
-        set_filter(speakers[1])
-    else
-        local next_speaker = nil
-        for index, speaker in ipairs(speakers) do
-            if speaker == filter_speaker then
-                next_speaker = speakers[index + 1]
-                break
-            end
-        end
-        set_filter(next_speaker)
-    end
 end
 
 local function load_secondary_srt()
@@ -139,6 +128,8 @@ local function load_secondary_srt()
     filtered_indices = {}
     speakers = {}
     filter_speaker = nil
+    filter_menu_open = false
+    filter_menu_hits = {}
     subtitle_file = nil
     top_index = 1
     last_anchor = nil
@@ -208,6 +199,10 @@ local function geometry()
     if not width or not height or width <= 0 or height <= 0 then return nil end
     local panel_x = math.floor(width * (1 - PANEL_RATIO))
     return {w = width, h = height, x = panel_x, width = width - panel_x}
+end
+
+local function filter_menu_capacity(g)
+    return math.max(0, math.floor((g.h - HEADER_HEIGHT) / FILTER_OPTION_HEIGHT))
 end
 
 local function wrap_text(text, max_units)
@@ -320,7 +315,9 @@ local function render()
         {g.x + 18, 52, g.w - 16, 80}))
 
     filter_hits = {}
+    filter_menu_hits = {}
     if #speakers > 0 and g.width >= 108 + #speakers * 73 then
+        filter_menu_open = false
         local x = g.x + 18
         for index = 0, #speakers do
             local speaker = index == 0 and nil or speakers[index]
@@ -337,11 +334,13 @@ local function render()
             x = x + button_width + 7
         end
     elseif #speakers > 0 then
-        local label = "说话人: " .. (filter_speaker or "全部") .. "  ▾"
+        local label = "说话人: " .. (filter_speaker or "全部") ..
+            (filter_menu_open and "  ▴" or "  ▾")
         table.insert(events, rectangle(g.x + 18, 87, g.w - 18, 118, "2B333E"))
         table.insert(events, text_event(g.x + 28, 89, 19, "FFFFFF", {label}))
-        table.insert(filter_hits, {left = g.x + 18, right = g.w - 18, cycle = true})
+        table.insert(filter_hits, {left = g.x + 18, right = g.w - 18, dropdown = true})
     else
+        filter_menu_open = false
         table.insert(events, text_event(g.x + 18, 89, 19,
             "929CAB", {"无说话人标签"}))
     end
@@ -397,6 +396,31 @@ local function render()
         table.insert(events, rectangle(g.w - 15, thumb_top, g.w - 5,
             thumb_top + thumb_height, "A4B5CB"))
     end
+    -- 下拉框最后绘制，覆盖字幕；超出窗口高度的选项可用滚轮浏览。
+    if filter_menu_open then
+        local capacity = filter_menu_capacity(g)
+        if capacity == 0 then
+            filter_menu_open = false
+        else
+            filter_menu_top = clamp(filter_menu_top, 1,
+                math.max(1, #speakers + 2 - capacity))
+            local left, right, y = g.x + 18, g.w - 18, 118
+            for position = filter_menu_top,
+                math.min(#speakers + 1, filter_menu_top + capacity - 1) do
+                local speaker = speakers[position - 1]
+                local selected = speaker == filter_speaker
+                table.insert(events, rectangle(left, y, right,
+                    y + FILTER_OPTION_HEIGHT, selected and "465B78" or "2B333E"))
+                table.insert(events, text_event(left + 10, y + 3, 19,
+                    selected and "FFFFFF" or "BEC8D5", {speaker or "全部"}))
+                table.insert(filter_menu_hits, {
+                    left = left, right = right, top = y,
+                    bottom = y + FILTER_OPTION_HEIGHT, speaker = speaker,
+                })
+                y = y + FILTER_OPTION_HEIGHT
+            end
+        end
+    end
     overlay.res_x, overlay.res_y = g.w, g.h
     overlay.data = table.concat(events, "\n")
     overlay:update()
@@ -422,11 +446,35 @@ end
 local function click_sidebar()
     local inside, mouse, g = in_sidebar()
     if not visible or not inside then return end
+    if filter_menu_open then
+        for _, hit in ipairs(filter_menu_hits) do
+            if mouse.x >= hit.left and mouse.x < hit.right and
+                mouse.y >= hit.top and mouse.y < hit.bottom then
+                set_filter(hit.speaker)
+                render()
+                return
+            end
+        end
+        filter_menu_open = false
+        render()
+        return
+    end
     if mouse.y < HEADER_HEIGHT then
         if mouse.y >= 87 and mouse.y < 118 then
             for _, hit in ipairs(filter_hits) do
                 if mouse.x >= hit.left and mouse.x < hit.right then
-                    if hit.cycle then cycle_filter() else set_filter(hit.speaker) end
+                    if hit.dropdown then
+                        filter_menu_open = true
+                        filter_menu_top = 1
+                        for index, speaker in ipairs(speakers) do
+                            if speaker == filter_speaker then
+                                filter_menu_top = index + 1
+                                break
+                            end
+                        end
+                    else
+                        set_filter(hit.speaker)
+                    end
                     render()
                     return
                 end
@@ -458,9 +506,16 @@ end
 
 local function scroll(direction)
     local inside = in_sidebar()
-    if not visible or not inside or #filtered_indices == 0 then return end
+    if not visible or not inside then return end
     local g = geometry()
     if not g then return end
+    if filter_menu_open then
+        filter_menu_top = clamp(filter_menu_top + direction * SCROLL_ROWS,
+            1, math.max(1, #speakers + 2 - filter_menu_capacity(g)))
+        render()
+        return
+    end
+    if #filtered_indices == 0 then return end
     follow_current = false
     top_index = clamp(top_index + direction * SCROLL_ROWS,
         1, last_top_index(g))
@@ -470,6 +525,7 @@ end
 
 local function filter_clicked_speaker(event)
     if event.event ~= "down" and event.event ~= "press" then return end
+    if filter_menu_open then return end
     local inside, mouse, g = in_sidebar()
     if not visible or not inside or mouse.y < HEADER_HEIGHT or
         mouse.x >= g.w - 22 then return end
@@ -530,7 +586,7 @@ local function sidebar_mouse(event)
         scrollbar_dragging = false
     elseif event.event == "down" or event.event == "press" then
         local inside, mouse, g = in_sidebar()
-        if visible and inside and mouse.y >= HEADER_HEIGHT and
+        if visible and inside and not filter_menu_open and mouse.y >= HEADER_HEIGHT and
             mouse.x >= g.w - 22 then
             scrollbar_dragging = true
             scrollbar_to(mouse.y)
@@ -600,6 +656,10 @@ mp.observe_property("mouse-pos", "native", function(_, mouse)
         scrollbar_dragging = false
     end
     local inside = in_sidebar()
+    if not inside and filter_menu_open then
+        filter_menu_open = false
+        render()
+    end
     if visible and inside then enable_mouse_bindings() else disable_mouse_bindings() end
 end)
 
@@ -618,6 +678,8 @@ end
 
 local function hide_sidebar()
     visible = false
+    filter_menu_open = false
+    filter_menu_hits = {}
     disable_mouse_bindings()
     disable_keyboard_bindings()
     overlay:remove()
