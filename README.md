@@ -92,7 +92,7 @@ python3 process-recordings.py /path/to/录播目录
 | 入口 | 打开方式 | 功能 |
 | --- | --- | --- |
 | `process-recordings.desktop` | 单个 FLV 或文件夹 | 生成 JSON、SRT、ASS，跳过已完成步骤 |
-| `subtitle-sidebar.desktop` | 视频文件 | 用 mpv 播放同名 ASS 和 SRT，显示字幕侧栏与热度图 |
+| `subtitle-sidebar.desktop` | 视频文件或文件夹 | 将视频或文件夹当前层所有 FLV 加入同一播放列表，加载同名 ASS 和 SRT，显示字幕侧栏与热度图 |
 | `video-asr.desktop` | 视频文件 | 仅运行语音识别，生成 JSON |
 
 若文件管理器没有立即显示新入口，可重新打开文件管理器或刷新桌面应用缓存。
@@ -100,6 +100,8 @@ python3 process-recordings.py /path/to/录播目录
 ## 播放器操作
 
 `play-with-transcript.py` 支持 FLV、MP4、MKV、MOV 和 WebM。它将 ASS 作为主字幕、SRT 作为副字幕，并从 SRT 生成右侧字幕侧栏。播放时必须已有同名 ASS 和 SRT。
+
+打开文件夹时，按文件名排序将当前层所有 FLV（含大写扩展名）加入同一个 mpv 播放列表，不递归子目录。也可以同时传入多个视频或文件夹；切换视频时加载各自同名的 ASS 和 SRT。
 
 | 操作 | 功能 |
 | --- | --- |

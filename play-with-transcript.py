@@ -39,7 +39,24 @@ def choose_video():
     return videos[int(choice) - 1]
 
 
-def command_for(video):
+def collect_videos(inputs):
+    videos = []
+    for source in inputs:
+        source = source.expanduser().resolve()
+        if source.is_dir():
+            entries = sorted(
+                path for path in source.iterdir()
+                if path.is_file() and path.suffix.lower() == ".flv"
+            )
+            if not entries:
+                raise ValueError(f"目录中没有 FLV 文件：{source}")
+            videos.extend(entries)
+        else:
+            videos.append(source)
+    return videos
+
+
+def video_options(video):
     video = video.expanduser().resolve()
     if not video.is_file() or video.suffix.lower() not in VIDEO_SUFFIXES:
         raise ValueError(f"不是支持的视频文件：{video}")
@@ -49,7 +66,11 @@ def command_for(video):
     if missing:
         raise ValueError("缺少同名字幕文件：" + "、".join(missing))
 
-    return [
+    return [f"--sub-file={ass}", f"--sub-file={srt}", str(video)]
+
+
+def command_for(videos):
+    command = [
         "mpv",
         "--no-sub-auto",
         "--sid=no",
@@ -58,15 +79,19 @@ def command_for(video):
         "--sub-use-margins=no",
         f"--script={LUA_SCRIPT}",
         f"--script={HEATMAP_SCRIPT}",
-        f"--sub-file={ass}",
-        f"--sub-file={srt}",
-        str(video),
     ]
+    for video in videos:
+        # 每个播放列表条目单独绑定字幕，切换视频时不会混用字幕。
+        command.extend(["--{", *video_options(video), "--}"])
+    return command
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("videos", nargs="*", type=Path, help="视频文件；不指定则显示选择菜单")
+    parser.add_argument(
+        "videos", nargs="*", type=Path,
+        help="视频文件或文件夹（添加当前层所有 FLV）；不指定则显示选择菜单",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只检查文件并打印 mpv 命令")
     args = parser.parse_args()
 
@@ -77,15 +102,15 @@ def main():
         parser.exit(1, "找不到 mpv 可执行程序\n")
 
     try:
-        videos = args.videos or [choose_video()]
-        for video in videos:
-            if video is None:
-                return 0
-            command = command_for(video)
-            if args.dry_run:
-                print(shlex.join(command))
-                continue
-            print(f"正在播放：{video}", flush=True)
+        inputs = args.videos or [choose_video()]
+        if inputs == [None]:
+            return 0
+        videos = collect_videos(inputs)
+        command = command_for(videos)
+        if args.dry_run:
+            print(shlex.join(command))
+        else:
+            print(f"播放列表共 {len(videos)} 个视频，正在播放：{videos[0]}", flush=True)
             if subprocess.run(command, check=False).returncode:
                 return 1
     except (OSError, ValueError) as error:

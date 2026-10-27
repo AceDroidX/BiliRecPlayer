@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=录播专用播放器
-Comment=使用 mpv 播放同名 ASS 弹幕和 SRT 字幕，并显示右侧字幕栏
+Comment=播放视频或文件夹中的所有 FLV，加载同名 ASS 弹幕和 SRT 字幕并显示右侧字幕栏
 Icon=mpv
 Exec=./play-with-transcript.py %F
 Terminal=true
-MimeType=video/x-flv;video/mp4;video/x-matroska;video/quicktime;video/webm;
+MimeType=video/x-flv;video/mp4;video/x-matroska;video/quicktime;video/webm;inode/directory;
 Categories=AudioVideo;Video;Player;
 NoDisplay=false
