@@ -31,6 +31,8 @@ local filter_menu_hits = {}
 local scrollbar = nil
 local scrollbar_dragging = false
 local browse_index = nil
+local auto_skip = false
+local auto_skip_position = nil
 
 local function clamp(value, minimum, maximum)
     return math.max(minimum, math.min(value, maximum))
@@ -101,6 +103,7 @@ local function parse_srt(data)
 end
 
 local function rebuild_filter()
+    auto_skip_position = nil
     filtered_indices = {}
     for index, sub in ipairs(subtitles) do
         if filter_speaker == nil or sub.speaker == filter_speaker then
@@ -125,6 +128,7 @@ local function load_secondary_srt()
     if path == subtitle_file then return end
 
     subtitles = {}
+    auto_skip_position = nil
     filtered_indices = {}
     speakers = {}
     filter_speaker = nil
@@ -192,6 +196,34 @@ local function find_anchor(time_pos)
         end
     end
     return result
+end
+
+local function auto_skip_on_time(_, time_pos)
+    if not auto_skip or not visible or not time_pos or
+        mp.get_property_bool("pause", false) or
+        mp.get_property_bool("seeking", false) then
+        auto_skip_position = nil
+        return
+    end
+    local delay = mp.get_property_number("secondary-sub-delay", 0)
+    local subtitle_time = time_pos - delay
+    local previous = auto_skip_position
+    auto_skip_position = nil
+    if previous then
+        local sub = subtitles[filtered_indices[previous]]
+        local next_index = filtered_indices[previous + 1]
+        -- 仅在实际播放的筛选字幕结束后向前跳，重叠或已开始的下一条继续正常播放。
+        if sub and subtitle_time >= sub.finish and next_index and
+            subtitles[next_index].start > subtitle_time then
+            mp.commandv("seek", tostring(subtitles[next_index].start + delay),
+                "absolute+exact")
+            return
+        end
+    end
+    local position = find_anchor(subtitle_time)
+    if position and subtitle_time < subtitles[filtered_indices[position]].finish then
+        auto_skip_position = position
+    end
 end
 
 local function geometry()
@@ -312,7 +344,12 @@ local function render()
     local detail = subtitle_file and
         (basename(subtitle_file) .. "  ·  " .. #subtitles .. " 条") or "未找到 secondary SRT"
     table.insert(events, text_event(g.x + 18, 53, 18, "AAB3C0", {detail},
-        {g.x + 18, 52, g.w - 16, 80}))
+        {g.x + 18, 52, math.max(g.x + 18, g.w - 170), 80}))
+    table.insert(events, rectangle(g.w - 156, 49, g.w - 18, 80,
+        auto_skip and "465B78" or "2B333E"))
+    table.insert(events, text_event(g.w - 148, 53, 19,
+        auto_skip and "FFFFFF" or "BEC8D5",
+        {"自动跳转: " .. (auto_skip and "开" or "关")}))
 
     filter_hits = {}
     filter_menu_hits = {}
@@ -446,6 +483,13 @@ end
 local function click_sidebar()
     local inside, mouse, g = in_sidebar()
     if not visible or not inside then return end
+    if mouse.x >= g.w - 156 and mouse.x < g.w - 18 and
+        mouse.y >= 49 and mouse.y < 80 then
+        auto_skip = not auto_skip
+        auto_skip_position = nil
+        render()
+        return
+    end
     if filter_menu_open then
         for _, hit in ipairs(filter_menu_hits) do
             if mouse.x >= hit.left and mouse.x < hit.right and
@@ -701,6 +745,7 @@ local function show_sidebar()
 end
 
 local function hide_sidebar()
+    auto_skip_position = nil
     visible = false
     filter_menu_open = false
     filter_menu_hits = {}
@@ -726,6 +771,7 @@ mp.register_event("file-loaded", function()
 end)
 
 mp.register_event("end-file", function()
+    auto_skip_position = nil
     subtitles = {}
     filtered_indices = {}
     speakers = {}
@@ -743,5 +789,13 @@ mp.observe_property("secondary-sid", "native", function()
         render()
     end)
 end)
+
+-- 清除跳转、暂停及字幕延迟变化前的状态，避免把进度调整误判为字幕播放结束。
+mp.register_event("seek", function() auto_skip_position = nil end)
+mp.observe_property("pause", "bool", function() auto_skip_position = nil end)
+mp.observe_property("secondary-sub-delay", "number", function()
+    auto_skip_position = nil
+end)
+mp.observe_property("time-pos", "number", auto_skip_on_time)
 
 mp.add_periodic_timer(0.2, render)
