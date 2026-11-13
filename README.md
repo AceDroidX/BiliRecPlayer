@@ -124,10 +124,13 @@ python3 process-recordings.py /path/to/录播目录
 ```bash
 python3 video-asr.py /path/to/录播.flv
 python3 video-asr.py --segment-minutes 10 /path/to/录播.flv
+python3 video-asr.py --retry-on-400 /path/to/录播.flv
 python3 diarized_json_to_srt.py /path/to/录播.json
 python3 xml-to-ass.py /path/to/录播.xml
 ```
 
 `video-asr.py` 默认整段提交；`--segment-minutes` 可指定每段的分钟数（支持小数，必须大于 0）。分段模式会重新编码 AAC 以准确裁切，依次请求 API，再将时间戳转换到原视频时间并拼接为同一个 JSON。各段说话人编号会重新分配，跨段的同一位说话人可能有不同编号。
+
+`--retry-on-400` 可在 curl 返回 HTTP 400 时，依次按 30、20、15、10 分钟重新分段识别整个文件，成功后停止；其他错误或 10 分钟分段仍失败时终止。首次请求仍遵循 `--segment-minutes` 设置。该参数在命令行默认关闭，通过 `video-asr.desktop` 启动时默认启用。
 
 `diarized_json_to_srt.py` 默认保留 `[S01]` 等说话人标记；可用 `--no-speaker` 去掉。`xml-to-ass.py` 默认读取项目内的 DanmakuFactory 配置；可用 `--config` 指定其他配置，用 `--factory` 指定可执行文件，用 `--force` 覆盖已有 ASS。各脚本的完整参数可用 `--help` 查看。

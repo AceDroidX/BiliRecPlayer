@@ -23,6 +23,10 @@ PROMPT = (
 )
 
 
+class ASRBadRequestError(RuntimeError):
+    """ASR 接口返回 HTTP 400，可尝试缩短分段。"""
+
+
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
@@ -121,25 +125,26 @@ def transcribe(source, temporary_output, start=None, duration=None):
     print(f"[{now()}] >>> ASR 请求开始", flush=True)
     curl_started = time.monotonic()
     try:
-        with temporary_output.open("wb") as output_file:
-            try:
-                curl = subprocess.run(
-                    [
-                        "curl", "-N", "--fail-with-body", "-sS", API_URL,
-                        "-F", "file=@-;filename=audio.aac;type=audio/aac",
-                        "-F", f"model={MODEL}",
-                        "-F", f"response_format={RESPONSE_FORMAT}",
-                        "-F", f"language={LANGUAGE}",
-                        "-F", "max_completion_tokens=16384",
-                        "-F", f"prompt={PROMPT}",
-                    ],
-                    stdin=ffmpeg.stdout,
-                    stdout=output_file,
-                    check=False,
-                )
-            finally:
-                if ffmpeg.stdout is not None:
-                    ffmpeg.stdout.close()
+        try:
+            curl = subprocess.run(
+                [
+                    "curl", "-N", "--fail-with-body", "-sS", API_URL,
+                    "--output", str(temporary_output), "--write-out", "%{http_code}",
+                    "-F", "file=@-;filename=audio.aac;type=audio/aac",
+                    "-F", f"model={MODEL}",
+                    "-F", f"response_format={RESPONSE_FORMAT}",
+                    "-F", f"language={LANGUAGE}",
+                    "-F", "max_completion_tokens=16384",
+                    "-F", f"prompt={PROMPT}",
+                ],
+                stdin=ffmpeg.stdout,
+                stdout=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        finally:
+            if ffmpeg.stdout is not None:
+                ffmpeg.stdout.close()
         print(f"[{now()}] <<< ASR 请求结束", flush=True)
         print(f"[{now()}]     ASR 请求耗时：{format_duration(time.monotonic() - curl_started)}", flush=True)
     finally:
@@ -149,6 +154,9 @@ def transcribe(source, temporary_output, start=None, duration=None):
         print(f"[{now()}] <<< ASR 管道结束", flush=True)
         print(f"[{now()}]     ASR 管道耗时：{format_duration(time.monotonic() - started)}", flush=True)
 
+    # 直接检查 HTTP 状态码，避免将其他 HTTP 错误也当作分段重试条件。
+    if curl.returncode == 22 and curl.stdout.strip() == "400":
+        raise ASRBadRequestError("ASR 请求失败（HTTP 400）")
     if ffmpeg_status or curl.returncode:
         raise RuntimeError(f"音频提取或 ASR 请求失败（ffmpeg: {ffmpeg_status}，curl: {curl.returncode}）")
 
@@ -208,7 +216,7 @@ def transcribe_in_segments(source, temporary_output, segment_seconds):
     temporary_output.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def process_file(source, segment_minutes=None):
+def process_file(source, segment_minutes=None, retry_on_400=False):
     if not source.is_file():
         raise RuntimeError(f"文件不存在：{source}")
 
@@ -232,10 +240,23 @@ def process_file(source, segment_minutes=None):
     ) as file:
         temporary_output = Path(file.name)
     try:
-        if segment_minutes is None:
-            transcribe(source, temporary_output)
-        else:
-            transcribe_in_segments(source, temporary_output, segment_minutes * 60)
+        attempts = [segment_minutes]
+        if retry_on_400:
+            attempts.extend([30, 20, 15, 10])
+        for index, minutes in enumerate(attempts):
+            try:
+                if minutes is None:
+                    transcribe(source, temporary_output)
+                else:
+                    transcribe_in_segments(source, temporary_output, minutes * 60)
+                break
+            except ASRBadRequestError:
+                if index + 1 == len(attempts):
+                    raise
+                print(
+                    f"[{now()}] ASR 返回 HTTP 400，按 {attempts[index + 1]} 分钟分段重新识别",
+                    flush=True,
+                )
         temporary_output.replace(destination)
     finally:
         temporary_output.unlink(missing_ok=True)
@@ -260,6 +281,10 @@ def main():
         "--segment-minutes", type=float, metavar="分钟",
         help="按指定分钟数分段提交（支持小数）；默认不分段",
     )
+    parser.add_argument(
+        "--retry-on-400", action="store_true",
+        help="遇到 HTTP 400 时依次按 30、20、15、10 分钟重新分段识别；默认关闭",
+    )
     args = parser.parse_args()
     if args.segment_minutes is not None and (
         not math.isfinite(args.segment_minutes) or args.segment_minutes <= 0
@@ -269,7 +294,7 @@ def main():
 
     for source in args.inputs:
         try:
-            process_file(source, args.segment_minutes)
+            process_file(source, args.segment_minutes, args.retry_on_400)
         except (OSError, UnicodeError, ValueError, RuntimeError) as error:
             print(f"识别失败：{source}：{error}", file=sys.stderr)
             notify("语音识别失败", f"{source.name}：{error}")

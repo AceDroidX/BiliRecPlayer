@@ -51,7 +51,7 @@ def process_video(source):
     else:
         if json_path.exists():
             print(f"重做 ASR：{json_path.name} 无效或为空")
-        if run_step(ASR_SCRIPT, source) and has_diarized_json(json_path):
+        if run_step(ASR_SCRIPT, source, "--retry-on-400") and has_diarized_json(json_path):
             json_updated = True
         else:
             print(f"ASR 失败，跳过字幕：{source.name}", file=sys.stderr)
